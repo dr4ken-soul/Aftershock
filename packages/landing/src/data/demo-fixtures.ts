@@ -1293,5 +1293,5 @@ export const demoFinding: LockfileFinding = {
   "firstBadWindowOverlap": true
 }
 export const fixtureCounts = {"packageNodes":1500,"versionNodes":3000,"maintainerNodes":32,"serviceNodes":1501,"edges":9087}
-export const fixtureMetrics = {"packageNodes":1500,"versionNodes":3000,"maintainerNodes":32,"serviceNodes":1501,"edges":9087,"closureMs":361.47,"scanMs":204.53}
+export const fixtureMetrics = {"packageNodes":1500,"versionNodes":3000,"maintainerNodes":32,"serviceNodes":1501,"edges":9087,"closureMs":513.82,"scanMs":214.29}
 export const fixtureStory = { artifacts: 84, packages: 42, minutes: 6 }

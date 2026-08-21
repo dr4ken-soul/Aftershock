@@ -144,7 +144,23 @@ The Vercel deployment intentionally uses the generated fixture answer map. It do
 
 The page now supports both modes. Leave `VITE_AFTERSHOCK_API_URL` empty for the fixture-backed static demo. Set it to the public URL of the Fastify API before the Vercel build and the lockfile demo calls `/api/scan` and `/api/exposure` against the live graph, with the fixture as a fallback if the API is unavailable.
 
-For a public live API, run the Fastify process on a Docker-capable VM such as a [DigitalOcean Droplet](https://www.digitalocean.com/products/droplets), run HydraDB beside it, and expose the API through HTTPS. Set these API host variables: `HYDRADB_URI`, `HYDRADB_USERNAME`, `HYDRADB_AUTH_TOKEN`, and `PORT`. Then set `VITE_AFTERSHOCK_API_URL` in Vercel to the HTTPS API URL and redeploy. A Vercel static project cannot itself provide the persistent HydraDB process.
+### Deploy the live path on Render
+
+Render can host the two runtime pieces separately: a private HydraDB service and a public Aftershock API web service. The Vercel landing page remains the browser-facing frontend.
+
+1. In Render, create a Private Service from the official HydraDB image, `ghcr.io/hydra-db/hydradb:latest`. Give it a persistent disk mounted at `/data`, and configure the same local-storage environment variables used in the HydraDB command above: `CLOUD_PROVIDER=local`, `LOCAL_PATH=/data/store`, `GRAPH_NAMESPACE=default`, `GRAPH_ID=default`, `GRAPH_CELL_ID=cell-0`, `GRAPH_CELLS=cell-0`, `GRAPH_NODE_ID=node-0`, `GRAPH_BOLT_NODE_ADDRESSES=node-0=hydradb:7687`, `GRAPH_ADVERTISED_BOLT_ADDR=hydradb:7687`, `GRAPH_DATA_CACHE_DIR=/data/cache`, `GRAPH_AUTH_TOKEN_FILE=/data/auth-token`, `GRAPH_ALLOW_PLAINTEXT=true`, and `RUST_MIN_STACK=33554432`. Create the `/data/auth-token` file with the same private token used by the API. Render's [Docker image deployment guide](https://render.com/docs/deploying-an-image), [private service guide](https://render.com/docs/private-services), and [persistent disk guide](https://render.com/docs/disks) cover these settings.
+2. In the same Render region and private network, create a Web Service from this GitHub repository. Use the repository root as the root directory. Set the build command to `corepack pnpm install --frozen-lockfile && corepack pnpm generate && corepack pnpm --filter graph build` and the start command to `node packages/graph/dist/index.js serve`.
+3. Set the API service variables: `HYDRADB_URI=bolt://<the HydraDB internal hostname>:7687`, `HYDRADB_USERNAME=neo4j`, `HYDRADB_AUTH_TOKEN=<the same token as /data/auth-token>`, `AFTERSHOCK_FIXTURE=packages/graph/fixtures/packages.jsonl`, and `GROQ_API_KEY` only if a future cached narration job needs it. Render supplies `PORT`; the API listens on `0.0.0.0`.
+4. Run the one-time graph build against the API service's HydraDB connection. From a Render shell or an equivalent trusted runtime, run `corepack pnpm aftershock build` with the API environment variables. This writes the generated fixture into the real HydraDB graph. Do not use `--offline` for this step.
+5. Copy the API web service's public HTTPS URL. In Vercel, add the build-time variable `VITE_AFTERSHOCK_API_URL=https://<your-api>.onrender.com`, then redeploy the landing page. The browser calls Render, Render calls HydraDB over Bolt, and the headline answers come from graph traversals.
+
+Render's [service types](https://render.com/docs/service-types), [private network guide](https://render.com/docs/private-network), and [environment variable guide](https://render.com/docs/environment-variables) explain the public web URL, internal service hostname, and secret settings. Use a pinned HydraDB image version for a production submission after the first successful smoke test. A DigitalOcean Droplet remains a valid alternative if you prefer to run both containers on one Docker host. A Vercel static project cannot itself provide the persistent HydraDB process.
+
+### Local live recording path
+
+The three-terminal sequence below is local live verification, not a deployment. It uses a real local HydraDB process, the real Aftershock Fastify API, and a Vite development server. It is the fastest way to record the live graph proof before deploying the same architecture to Render.
+
+Terminal 1 runs HydraDB with Docker. Terminal 2 builds the graph through Bolt and serves the API. Terminal 3 starts the landing page with `VITE_AFTERSHOCK_API_URL=http://localhost:8787`. When the demo reports `live hydradb graph`, the browser has called the API and the API has queried HydraDB. The local sequence does not require Vercel or Render.
 
 ## Environment
 

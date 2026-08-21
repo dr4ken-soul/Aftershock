@@ -4,7 +4,7 @@
   "maintainerNodes": 32,
   "serviceNodes": 1501,
   "edges": 9087,
-  "closureMs": 362.83,
-  "scanMs": 207.86,
-  "generatedAt": "2026-08-21T03:08:09.469Z"
+  "closureMs": 513.82,
+  "scanMs": 214.29,
+  "generatedAt": "2026-08-21T03:16:43.330Z"
 }

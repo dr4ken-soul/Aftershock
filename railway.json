@@ -1,0 +1,12 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "RAILPACK",
+    "buildCommand": "corepack pnpm install --frozen-lockfile && corepack pnpm generate && corepack pnpm --filter graph build"
+  },
+  "deploy": {
+    "startCommand": "corepack pnpm aftershock build && node packages/graph/dist/index.js serve",
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 10
+  }
+}

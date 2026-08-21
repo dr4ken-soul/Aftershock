@@ -140,7 +140,7 @@ vercel --prod
 
 With no `VITE_AFTERSHOCK_API_URL`, the Vercel deployment uses the generated fixture answer map and needs no `.env` file. It does not connect the browser directly to Hydradb.
 
-The page now supports both modes. Leave `VITE_AFTERSHOCK_API_URL` empty for the fixture-backed static demo. Set it to the public URL of the Fastify API before the Vercel build and the lockfile demo calls `/api/scan` and `/api/exposure` against the live graph, with the fixture as a fallback if the API is unavailable.
+The page supports two explicit modes. Leave `VITE_AFTERSHOCK_API_URL` empty for the fixture-backed static demo. Set it to the public URL of the Fastify API before the Vercel build and the lockfile demo calls `/api/scan` and `/api/exposure` against the live graph. If the configured API is unavailable, the live demo reports that state and does not substitute fixture findings.
 
 ### Deploy the live path on Railway
 

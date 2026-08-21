@@ -99,7 +99,21 @@ pnpm --filter landing preview
 
 The landing build is static and its lockfile interaction reads the generated fixture answer map. It does not require a running API or network request. The hero canvas uses generated coordinates and dependency edges from the same fixture.
 
+## Deploy the landing page to Vercel
+
+The repository includes `vercel.json` for the static landing package. Import the repository into Vercel with the repository root as the Root Directory. Vercel will use the Vite preset, run the fixture generation and landing build, then serve `packages/landing/dist`.
+
+```bash
+vercel --prod
+```
+
+The Vercel deployment intentionally uses the generated fixture answer map. It does not connect the browser directly to Hydradb, so deploying the landing page does not switch the demo to live graph mode and does not need a `.env` file or Vercel environment variables.
+
+The live Hydradb mode is the Node CLI and Fastify API path documented above. To run that path, start the API on a host that can reach Hydradb and provide `HYDRADB_URI` there. The current Vercel project is a static landing deployment, not a serverless Hydradb API deployment.
+
 ## Environment
+
+No `.env` file is required for the static landing page. Copy `.env.example` only when running the production CLI or API locally, then export the values in your shell. The application reads `process.env` directly and does not load dotenv files.
 
 ```text
 HYDRADB_URI=bolt://localhost:7687

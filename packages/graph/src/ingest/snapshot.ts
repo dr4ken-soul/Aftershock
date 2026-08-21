@@ -2,7 +2,8 @@ import { createReadStream } from 'node:fs'
 import { createInterface } from 'node:readline'
 import type { Driver } from 'neo4j-driver'
 import type { FixturePackage } from '../types/index.js'
-import { runQuery } from '../graph/client.js'
+import { runCommand } from '../graph/client.js'
+import { nodeId } from '../graph/ids.js'
 
 export interface IngestCounts {
   packageNodes: number
@@ -12,33 +13,66 @@ export interface IngestCounts {
   edges: number
 }
 
-const ingestStatement = `
+const packageVertexStatement = `
 UNWIND $rows AS row
-MERGE (p:package {name: row.package.name})
-SET p.downloads = row.package.downloads, p.createdAt = row.package.createdAt
-WITH row, p
-UNWIND row.versions AS version
-MERGE (v:version {id: version.id})
-SET v.publishedAt = version.publishedAt, v.digest = version.digest
-MERGE (p)-[:has_version]->(v)
-WITH row, p, version, v
-FOREACH (dependency IN version.dependencies |
-  MERGE (dependencyVersion:version {id: dependency.id})
-  MERGE (v)-[:depends_on {scope: dependency.scope}]->(dependencyVersion)
-)
-WITH row, p
-UNWIND row.maintainers AS maintainerName
-MERGE (m:maintainer {name: maintainerName})
-MERGE (m)-[:maintains]->(p)
-WITH row
-UNWIND row.services AS service
-MERGE (s:service {name: service.name})
-SET s.source = service.source
-WITH row, service
-MATCH (v:version {id: service.version})
-MATCH (s:service {name: service.name})
-MERGE (s)-[:resolves]->(v)
-RETURN count(*) AS rows`
+MERGE (p {id: row.vertex})
+SET p:package, p.name = row.name, p.downloads = row.downloads, p.createdAt = row.createdAt
+`
+
+const versionVertexStatement = `
+UNWIND $rows AS row
+MERGE (v {id: row.vertex})
+SET v:version, v.key = row.key, v.publishedAt = row.publishedAt, v.digest = row.digest
+`
+
+const maintainerVertexStatement = `
+UNWIND $rows AS row
+MERGE (m {id: row.vertex})
+SET m:maintainer, m.name = row.name
+`
+
+const serviceVertexStatement = `
+UNWIND $rows AS row
+MERGE (s {id: row.vertex})
+SET s:service, s.name = row.name, s.source = row.source
+`
+
+const packageVersionStatement = `
+UNWIND $rows AS row
+MATCH (p:package {id: row.sourceVertex}), (v:version {id: row.destinationVertex})
+MERGE (p)-[r:has_version {id: row.relationshipVertex}]->(v)
+`
+
+const dependencyStatement = `
+UNWIND $rows AS row
+MATCH (v:version {id: row.sourceVertex}), (dependencyVersion:version {id: row.destinationVertex})
+MERGE (v)-[r:depends_on {id: row.relationshipVertex}]->(dependencyVersion)
+SET r.scope = row.scope
+`
+
+const reverseDependencyStatement = `
+UNWIND $rows AS row
+MATCH (v:version {id: row.sourceVertex}), (dependencyVersion:version {id: row.destinationVertex})
+MERGE (dependencyVersion)-[r:required_by {id: row.reverseRelationshipVertex}]->(v)
+`
+
+const maintainerStatement = `
+UNWIND $rows AS row
+MATCH (m:maintainer {id: row.sourceVertex}), (p:package {id: row.destinationVertex})
+MERGE (m)-[r:maintains {id: row.relationshipVertex}]->(p)
+`
+
+const serviceStatement = `
+UNWIND $rows AS row
+MATCH (s:service {id: row.sourceVertex}), (v:version {id: row.destinationVertex})
+MERGE (s)-[r:resolves {id: row.relationshipVertex}]->(v)
+`
+
+async function runBatched<T extends Record<string, unknown>>(driver: Driver, statement: string, rows: T[]): Promise<void> {
+  for (let offset = 0; offset < rows.length; offset += 512) {
+    await runCommand(driver, statement, { rows: rows.slice(offset, offset + 512) })
+  }
+}
 
 /** Streams the deterministic JSONL fixture into Hydradb in batches of 1000 rows. */
 export async function ingestSnapshot(driver: Driver, fixturePath: string): Promise<IngestCounts> {
@@ -47,26 +81,46 @@ export async function ingestSnapshot(driver: Driver, fixturePath: string): Promi
   let batch: FixturePackage[] = []
   const flush = async (): Promise<void> => {
     if (batch.length === 0) return
-    const rows = batch.map((entry) => ({
-      package: entry.package,
-      versions: entry.versions.map((version) => ({
-        id: `${entry.package.name}@${version.version}`,
-        publishedAt: version.publishedAt,
-        digest: version.digest,
-        dependencies: Object.entries(version.dependencies).map(([name, range]) => ({
-          id: `${name}@${range.replace(/^[^0-9]*/, '') || '1.0.0'}`,
-          scope: 'runtime',
-        })),
-      })),
-      maintainers: entry.maintainers,
-      services: entry.services,
-    }))
-    await runQuery(driver, ingestStatement, { rows })
+    const packageRows = batch.map((entry) => ({ vertex: nodeId('package', entry.package.name), name: entry.package.name, downloads: entry.package.downloads, createdAt: entry.package.createdAt }))
+    const versionRows = batch.flatMap((entry) => entry.versions.map((version) => ({
+      vertex: nodeId('version', `${entry.package.name}@${version.version}`),
+      key: `${entry.package.name}@${version.version}`,
+      publishedAt: version.publishedAt,
+      digest: version.digest,
+    })))
+    const packageVersionRows = batch.flatMap((entry) => entry.versions.map((version) => ({
+      relationshipVertex: nodeId('has-version', `${entry.package.name}@${version.version}`),
+      sourceVertex: nodeId('package', entry.package.name),
+      destinationVertex: nodeId('version', `${entry.package.name}@${version.version}`),
+    })))
+    const dependencyRows = batch.flatMap((entry) => entry.versions.flatMap((version) => Object.entries(version.dependencies).map(([name, range]) => ({
+      relationshipVertex: nodeId('depends-on', `${entry.package.name}@${version.version}:${name}@${range}`),
+      reverseRelationshipVertex: nodeId('required-by', `${entry.package.name}@${version.version}:${name}@${range}`),
+      sourceVertex: nodeId('version', `${entry.package.name}@${version.version}`),
+      destinationVertex: nodeId('version', `${name}@${range.replace(/^[^0-9]*/, '') || '1.0.0'}`),
+      dependencyKey: `${name}@${range.replace(/^[^0-9]*/, '') || '1.0.0'}`,
+      scope: 'runtime',
+    }))))
+    const dependencyVersionRows = dependencyRows.map((row) => ({ vertex: row.destinationVertex, key: row.dependencyKey, publishedAt: 0, digest: 'dependency' }))
+    const allVersionRows = [...new Map([...versionRows, ...dependencyVersionRows].map((row) => [row.key, row])).values()]
+    const maintainerRows = batch.flatMap((entry) => entry.maintainers.map((name) => ({ relationshipVertex: nodeId('maintains', `${name}:${entry.package.name}`), sourceVertex: nodeId('maintainer', name), destinationVertex: nodeId('package', entry.package.name) })))
+    const maintainerVertices = [...new Set(batch.flatMap((entry) => entry.maintainers))].map((name) => ({ vertex: nodeId('maintainer', name), name }))
+    const serviceRows = batch.flatMap((entry) => entry.services.map((service) => ({ relationshipVertex: nodeId('resolves', `${service.name}:${service.version}`), sourceVertex: nodeId('service', service.name), destinationVertex: nodeId('version', service.version) })))
+    const serviceVertices = batch.flatMap((entry) => entry.services.map((service) => ({ vertex: nodeId('service', service.name), name: service.name, source: service.source })))
+    await runBatched(driver, packageVertexStatement, packageRows)
+    await runBatched(driver, versionVertexStatement, allVersionRows)
+    await runBatched(driver, maintainerVertexStatement, maintainerVertices)
+    await runBatched(driver, serviceVertexStatement, serviceVertices)
+    await runBatched(driver, packageVersionStatement, packageVersionRows)
+    if (dependencyRows.length > 0) await runBatched(driver, dependencyStatement, dependencyRows)
+    if (dependencyRows.length > 0) await runBatched(driver, reverseDependencyStatement, dependencyRows)
+    if (maintainerRows.length > 0) await runBatched(driver, maintainerStatement, maintainerRows)
+    if (serviceRows.length > 0) await runBatched(driver, serviceStatement, serviceRows)
     counts.packageNodes += batch.length
     counts.versionNodes += batch.reduce((sum, entry) => sum + entry.versions.length, 0)
     counts.maintainerNodes += new Set(batch.flatMap((entry) => entry.maintainers)).size
     counts.serviceNodes += batch.reduce((sum, entry) => sum + entry.services.length, 0)
-    counts.edges += batch.reduce((sum, entry) => sum + entry.versions.reduce((versionSum, version) => versionSum + Object.keys(version.dependencies).length + 1, 0) + entry.maintainers.length + entry.services.length, 0)
+    counts.edges += batch.reduce((sum, entry) => sum + entry.versions.reduce((versionSum, version) => versionSum + (Object.keys(version.dependencies).length * 2) + 1, 0) + entry.maintainers.length + entry.services.length, 0)
     batch = []
   }
   for await (const line of input) {

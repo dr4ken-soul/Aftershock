@@ -26,9 +26,25 @@ export async function runQuery<T = Record<string, unknown>>(
   }
 }
 
+/** Runs a mutation or schema command without decoding its empty result rows. */
+export async function runCommand(
+  driver: Driver,
+  text: string,
+  params: Record<string, unknown> = {},
+): Promise<void> {
+  const session = driver.session()
+  try {
+    await new Promise<void>((resolve, reject) => {
+      session.run(text, params).subscribe({ onCompleted: () => resolve(), onError: reject })
+    })
+  } finally {
+    await session.close()
+  }
+}
+
 /** Measures the Bolt round trip for a minimal Hydradb health query. */
 export async function healthcheck(driver: Driver): Promise<number> {
   const startedAt = performance.now()
-  await runQuery(driver, 'RETURN 1 AS healthy')
+  await runQuery(driver, 'MATCH (p:package) RETURN p.name AS healthy LIMIT 1')
   return Math.round((performance.now() - startedAt) * 100) / 100
 }

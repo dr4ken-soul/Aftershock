@@ -36,9 +36,14 @@ export async function getExposureReport(runtime: GraphRuntime, packageName: stri
   if (versionRows.length === 0) throw new Error(`Package not found in graph: ${packageName}`)
   const flagged = versionRows[0]
   const version = flagged.version.includes('@') ? flagged.version.split('@').slice(1).join('@') : flagged.version
-  const rows = await queryRuntime<ClosureRow>(runtime, exposureClosureQuery(packageName, version))
+  const rows = runtime.mode === 'offline'
+    ? await queryRuntime<ClosureRow>(runtime, exposureClosureQuery(packageName, version, 1))
+    : (await Promise.all(Array.from({ length: 12 }, (_, index) => queryRuntime<Omit<ClosureRow, 'path' | 'depth'> & { path: string | string[] }>(runtime, exposureClosureQuery(packageName, version, index + 1))))).flatMap((depthRows, index) => depthRows.map((row) => ({ ...row, depth: index + 1 }))).reduce<(Omit<ClosureRow, 'path' | 'depth'> & { path: string | string[], depth: number })[]>((result, row) => {
+      if (!result.some((existing) => existing.exposed === row.exposed)) result.push(row)
+      return result
+    }, [])
   const compromise = { package: packageName, version, flaggedAt: Number(flagged.publishedAt) }
-  const events = buildSpreadEvents(rows.map((row) => ({ ...row, depth: Number(row.depth), publishedAt: Number(row.publishedAt) })), compromise, Number(process.env.AFTERSHOCK_SPREAD_SCALE ?? 10))
+  const events = buildSpreadEvents(rows.map((row) => ({ ...row, path: Array.isArray(row.path) ? row.path : [row.path], depth: Number(row.depth), publishedAt: Number(row.publishedAt) })), compromise, Number(process.env.AFTERSHOCK_SPREAD_SCALE ?? 10))
   const neighbourhood = await getNeighbourhood(runtime, packageName)
   const typosquats = await getTyposquats(runtime, packageName)
   return { comprom: compromise, totalExposed: events.length, maxDepth: maxSpreadDepth(events), events, maintainerNeighbourhood: neighbourhood, typosquats }
@@ -59,11 +64,11 @@ export async function getTyposquats(runtime: GraphRuntime, packageName: string):
 /** Joins parsed lockfile resolutions to graph services and returns only exposed findings. */
 export async function scanResolvedPackages(runtime: GraphRuntime, packages: ResolvedLockfilePackage[], packageName = 'left-pad'): Promise<LockfileFinding[]> {
   const resolvedIds = packages.map((item) => item.resolved)
-  const joins = await queryRuntime<{ service: string, resolved: string, path: string[] }>(runtime, lockfileJoinQuery(resolvedIds))
+  const joins = (await Promise.all(resolvedIds.map((resolvedId) => queryRuntime<{ service: string, resolved: string, path: string | string[] }>(runtime, lockfileJoinQuery(resolvedId))))).flat()
   const report = await getExposureReport(runtime, packageName)
   const exposedIds = new Set(report.events.map((event) => `${event.name}@${event.version}`))
   exposedIds.add(`${packageName}@${report.comprom.version}`)
-  const joined = joins.map((row) => ({ resolved: row.resolved, path: packages.find((item) => item.resolved === row.resolved)?.path ?? row.path }))
+  const joined = joins.map((row) => ({ resolved: row.resolved, path: packages.find((item) => item.resolved === row.resolved)?.path ?? (Array.isArray(row.path) ? row.path : [row.path]) }))
   return toLockfileFindings(joined.filter((row) => exposedIds.has(row.resolved) || row.resolved === `${packageName}@${report.comprom.version}`), exposedIds)
 }
 

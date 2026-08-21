@@ -32,9 +32,9 @@ export class OfflineGraph {
 
   /** Executes the same logical graph operation represented by a production query. */
   public async query<T>(query: QuerySpec): Promise<T[]> {
-    if (query.text.includes('target:version')) return this.closure(query.params.packageName as string, query.params.versionId as string) as T[]
+    if (query.text.includes('target:version') || query.text.includes('required_by')) return this.closure(query.params.packageName as string, query.params.versionId as string) as T[]
     if (query.text.includes('ORDER BY v.publishedAt')) return this.versionWindow(query.params.packageName as string) as T[]
-    if (query.text.includes('UNWIND $resolvedIds')) return this.lockfileJoin(query.params.resolvedIds as string[]) as T[]
+    if (query.text.includes('resolves')) return this.lockfileJoin([query.params.resolvedId as string]) as T[]
     if (query.text.includes('maintains')) return this.neighbourhood(query.params.packageName as string) as T[]
     if (query.text.includes('similar_name')) return this.typosquats(query.params.packageName as string) as T[]
     return []
@@ -132,5 +132,5 @@ export class OfflineGraph {
 
 /** Creates all query specs used by the offline adapter, keeping query provenance visible. */
 export function offlineQuerySpecs(packageName: string, version: string, resolvedIds: string[]): QuerySpec[] {
-  return [exposureClosureQuery(packageName, version), versionWindowQuery(packageName), lockfileJoinQuery(resolvedIds), maintainerNeighbourhoodQuery(packageName), typosquatRingQuery(packageName)]
+  return [exposureClosureQuery(packageName, version), versionWindowQuery(packageName), ...resolvedIds.map((resolvedId) => lockfileJoinQuery(resolvedId)), maintainerNeighbourhoodQuery(packageName), typosquatRingQuery(packageName)]
 }

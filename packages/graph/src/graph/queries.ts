@@ -4,8 +4,9 @@ import { nodeId } from './ids.js'
 /** Builds the reverse dependency closure traversal for a compromised package. */
 export function exposureClosureQuery(packageName: string, version: string, depth = 1): QuerySpec {
   const flaggedId = nodeId('version', `${packageName}@${version}`).toNumber()
+  const traversal = Array.from({ length: depth }, (_, index) => `-[:required_by]->(${index === depth - 1 ? 'target' : `hop${index}`})`).join('')
   return {
-    text: `MATCH (flagged {id: ${flaggedId}})-[:required_by*${depth}..${depth}]->(target)
+    text: `MATCH (flagged {id: ${flaggedId}})${traversal}
 RETURN target.key AS exposed, target.key AS path, target.publishedAt AS publishedAt
 ORDER BY exposed ASC`,
     params: { packageName, versionId: `${packageName}@${version}`, versionKey: `${packageName}@${version}`, depth },

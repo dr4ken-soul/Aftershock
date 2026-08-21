@@ -3,8 +3,8 @@
   "versionNodes": 3000,
   "maintainerNodes": 32,
   "serviceNodes": 1501,
-  "edges": 9087,
-  "closureMs": 513.82,
-  "scanMs": 214.29,
-  "generatedAt": "2026-08-21T03:16:43.330Z"
+  "edges": 12167,
+  "closureMs": 334.66,
+  "scanMs": 160.99,
+  "generatedAt": "2026-08-21T06:56:23.586Z"
 }

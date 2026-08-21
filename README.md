@@ -110,14 +110,12 @@ The graph uses these node shapes:
 (:service {name, source})
 ```
 
-The dependency and evidence edges are `has_version`, `depends_on`, `maintains`, `resolves`, and `similar_name`. The central exposure query is a reverse traversal:
+The dependency and evidence edges are `has_version`, `depends_on`, `required_by`, `maintains`, `resolves`, and `similar_name`. The central exposure query is a reverse traversal over the real Bolt graph. HydraDB 0.1.0 supports fixed-depth relationship patterns, so the runtime issues one fixed-depth traversal per depth:
 
 ```cypher
-MATCH (seed:package {name: $packageName})-[:has_version]->(flagged:version {id: $versionId})
-MATCH path = (target:version)-[:depends_on*1..12]->(flagged)
-RETURN target.id AS exposed, length(path) AS depth,
-  [node IN nodes(path) | node.id] AS path
-ORDER BY depth ASC, exposed ASC
+MATCH (flagged {id: 123})-[:required_by]->(target)
+RETURN target.key AS exposed, target.key AS path, target.publishedAt AS publishedAt
+ORDER BY exposed ASC
 ```
 
 The other query functions are parameterised in `packages/graph/src/graph/queries.ts`. No vector index or similarity search is used for a headline answer. Name proximity is represented only by measured `similar_name` graph edges.
@@ -140,15 +138,21 @@ The repository includes `vercel.json` for the static landing package. Import the
 vercel --prod
 ```
 
-The Vercel deployment intentionally uses the generated fixture answer map. It does not connect the browser directly to Hydradb, so deploying the landing page does not switch the demo to live graph mode and does not need a `.env` file or Vercel environment variables.
+With no `VITE_AFTERSHOCK_API_URL`, the Vercel deployment uses the generated fixture answer map and needs no `.env` file. It does not connect the browser directly to Hydradb.
 
 The page now supports both modes. Leave `VITE_AFTERSHOCK_API_URL` empty for the fixture-backed static demo. Set it to the public URL of the Fastify API before the Vercel build and the lockfile demo calls `/api/scan` and `/api/exposure` against the live graph, with the fixture as a fallback if the API is unavailable.
 
-### Deploy the live path on Render
+### Deploy the live path on Railway
 
-Render can host the two runtime pieces separately: a private HydraDB service and a public Aftershock API web service. The Vercel landing page remains the browser-facing frontend.
+Railway hosts the HydraDB graph service and the public Aftershock API service. The Vercel landing page remains the browser-facing frontend.
 
-1. In Render, create a Private Service from the official HydraDB image, `ghcr.io/hydra-db/hydradb:latest`. Give it a persistent disk mounted at `/data`. Add a Render Secret File named `hydradb-auth-token` and put your chosen token in its contents. Render exposes that file to the container at `/etc/secrets/hydradb-auth-token`. Configure these HydraDB environment variables, replacing `<hydradb-internal-hostname>` with the service address shown in Render's Connect panel:
+1. Create a Railway service from the official HydraDB image, `ghcr.io/hydra-db/hydradb:latest`. Add a persistent volume mounted at `/data`. Set the service start command to the following, replacing the token with a secret you create:
+
+   ```sh
+   /bin/sh -c "echo YOUR_GRAPH_TOKEN > /data/auth-token && mkdir -p /data/store /data/cache && exec /usr/local/bin/graph-node"
+   ```
+
+   Set the HydraDB variables below. Replace `<hydradb-internal-hostname>` with the hostname Railway shows for the HydraDB service. In the verified deployment it is `hydradb.railway.internal`.
 
    ```text
    CLOUD_PROVIDER=local
@@ -161,33 +165,32 @@ Render can host the two runtime pieces separately: a private HydraDB service and
    GRAPH_BOLT_NODE_ADDRESSES=node-0=<hydradb-internal-hostname>:7687
    GRAPH_ADVERTISED_BOLT_ADDR=<hydradb-internal-hostname>:7687
    GRAPH_DATA_CACHE_DIR=/data/cache
-   GRAPH_AUTH_TOKEN_FILE=/etc/secrets/hydradb-auth-token
+   GRAPH_AUTH_TOKEN_FILE=/data/auth-token
    GRAPH_ALLOW_PLAINTEXT=true
    RUST_MIN_STACK=33554432
    ```
 
-   Render's [Docker image deployment guide](https://render.com/docs/deploying-an-image), [private service guide](https://render.com/docs/private-services), [persistent disk guide](https://render.com/docs/disks), and [secret file guide](https://render.com/docs/configure-environment-variables) cover these settings.
-2. In the same Render region and private network, create a Web Service from this GitHub repository. Use the repository root as the root directory. Set the build command to `corepack pnpm install --frozen-lockfile && corepack pnpm generate && corepack pnpm --filter graph build` and the start command to `node packages/graph/dist/index.js serve`.
+2. Create a second Railway service from this repository. Use the repository root and the committed `railway.json`. The service build command is `corepack pnpm install --frozen-lockfile && corepack pnpm generate && corepack pnpm --filter graph build`, and its start command builds the graph over Bolt before starting the API.
 3. Set the API service variables exactly as follows:
 
    ```text
    HYDRADB_URI=bolt://<hydradb-internal-hostname>:7687
    HYDRADB_USERNAME=neo4j
-   HYDRADB_AUTH_TOKEN=<the exact contents of hydradb-auth-token>
+   HYDRADB_AUTH_TOKEN=<the exact same token used by HydraDB>
    AFTERSHOCK_FIXTURE=packages/graph/fixtures/packages.jsonl
    ```
 
-   Render supplies `PORT`; the API listens on `0.0.0.0`. `GROQ_API_KEY` is not required for this live graph path.
-4. Run the one-time graph build against the API service's HydraDB connection. From a Render shell or an equivalent trusted runtime, run `corepack pnpm aftershock build` with the API environment variables. This writes the generated fixture into the real HydraDB graph. Do not use `--offline` for this step.
-5. Copy the API web service's public HTTPS URL. In Vercel, add the build-time variable `VITE_AFTERSHOCK_API_URL=https://<your-api>.onrender.com`, then redeploy the landing page. The browser calls Render, Render calls HydraDB over Bolt, and the headline answers come from graph traversals.
+   Railway supplies `PORT`; the API listens on `0.0.0.0`. `GROQ_API_KEY` is not required for this live graph path.
+4. Generate a public domain for the API service. The verified deployment uses `https://aftershock-api-production.up.railway.app`. Check it with `/health`, which measures a real Bolt package-node round trip.
+5. In Vercel, add the build-time variable `VITE_AFTERSHOCK_API_URL=https://<your-api-domain>`, then redeploy the landing page. The browser calls Railway, Railway calls HydraDB over Bolt, and the headline answers come from graph traversals.
 
-Render's [service types](https://render.com/docs/service-types), [private network guide](https://render.com/docs/private-network), and [environment variable guide](https://render.com/docs/environment-variables) explain the public web URL, internal service hostname, and secret settings. Use a pinned HydraDB image version for a production submission after the first successful smoke test. A DigitalOcean Droplet remains a valid alternative if you prefer to run both containers on one Docker host. A Vercel static project cannot itself provide the persistent HydraDB process.
+Railway's [deployment guide](https://docs.railway.com/deploy/deployments), [volumes guide](https://docs.railway.com/reference/volumes), and [private networking guide](https://docs.railway.com/guides/private-networking) cover the deployment settings. A Vercel project cannot itself provide the persistent HydraDB process.
 
 ### Local live recording path
 
-The three-terminal sequence below is local live verification, not a deployment. It uses a real local HydraDB process, the real Aftershock Fastify API, and a Vite development server. It is the fastest way to record the live graph proof before deploying the same architecture to Render.
+The three-terminal sequence below is local live verification, not a deployment. It uses a real local HydraDB process, the real Aftershock Fastify API, and a Vite development server. The deployed recording path uses the Railway API URL above instead.
 
-Terminal 1 runs HydraDB with Docker. Terminal 2 builds the graph through Bolt and serves the API. Terminal 3 starts the landing page with `VITE_AFTERSHOCK_API_URL=http://localhost:8787`. When the demo reports `live hydradb graph`, the browser has called the API and the API has queried HydraDB. The local sequence does not require Vercel or Render.
+Terminal 1 runs HydraDB with Docker. Terminal 2 builds the graph through Bolt and serves the API. Terminal 3 starts the landing page with `VITE_AFTERSHOCK_API_URL=http://localhost:8787`. When the demo reports `live hydradb graph`, the browser has called the API and the API has queried HydraDB. The local sequence does not require Vercel or Railway.
 
 ## Environment
 
@@ -218,7 +221,7 @@ The latest local verification generated these values from the actual fixture and
 | version nodes | 3,000 |
 | maintainer nodes | 32 |
 | service nodes | 1,501 |
-| graph edges | 9,087 |
+| graph edges | 12,167 |
 | exposed version artifacts | 84 |
 | affected packages | 42 |
 

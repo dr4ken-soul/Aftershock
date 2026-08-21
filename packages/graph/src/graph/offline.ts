@@ -50,7 +50,7 @@ export class OfflineGraph {
       row.maintainers.forEach((name) => maintainers.add(name))
       services += row.services.length
       versions += row.versions.length
-      edges += row.versions.reduce((sum, version) => sum + Object.keys(version.dependencies).length + 1, 0) + row.maintainers.length + row.services.length
+      edges += row.versions.reduce((sum, version) => sum + (Object.keys(version.dependencies).length * 2) + 1, 0) + row.maintainers.length + row.services.length
     }
     const typoEdges = this.typoPairs().length
     return { packageNodes: this.packages.size, versionNodes: versions, maintainerNodes: maintainers.size, serviceNodes: services, edges: edges + typoEdges }

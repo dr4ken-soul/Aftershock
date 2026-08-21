@@ -24,13 +24,16 @@ export function registerRoutes(server: FastifyInstance, runtime: GraphRuntime, h
   })
   server.post('/api/scan', async (request, reply) => {
     const lockfile = z.record(z.unknown()).parse(request.body)
-    const temporaryPath = `${process.cwd()}/.aftershock-lockfile.json`
-    const { writeFile, unlink } = await import('node:fs/promises')
+    const { mkdtemp, writeFile, rm } = await import('node:fs/promises')
+    const { join } = await import('node:path')
+    const { tmpdir } = await import('node:os')
+    const temporaryDirectory = await mkdtemp(join(tmpdir(), 'aftershock-lockfile-'))
+    const temporaryPath = join(temporaryDirectory, 'package-lock.json')
     await writeFile(temporaryPath, JSON.stringify(lockfile), 'utf8')
     try {
       return reply.send({ findings: await handlers.scanLockfile(runtime, temporaryPath) })
     } finally {
-      await unlink(temporaryPath).catch(() => undefined)
+      await rm(temporaryDirectory, { recursive: true, force: true }).catch(() => undefined)
     }
   })
   server.post('/api/neighbourhood', async (request, reply) => {

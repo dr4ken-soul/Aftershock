@@ -6,7 +6,9 @@ export function createDriver(): Driver {
   if (!uri) {
     throw new Error('HYDRADB_URI is not set, default is bolt://localhost:7687')
   }
-  return neo4j.driver(uri)
+  const token = process.env.HYDRADB_AUTH_TOKEN
+  const username = process.env.HYDRADB_USERNAME ?? 'neo4j'
+  return token ? neo4j.driver(uri, neo4j.auth.basic(username, token)) : neo4j.driver(uri)
 }
 
 /** Runs a Cypher statement through the Hydradb Bolt endpoint. */

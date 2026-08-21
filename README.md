@@ -21,6 +21,13 @@ The fixture generator is deterministic. It creates 1,500 package nodes, 3,000 ve
 - pnpm 9 or newer through Corepack
 - Hydradb running with a Bolt endpoint for the production graph path
 
+Official links:
+
+- [HydraDB repository and Docker instructions](https://github.com/hydra-db/hydradb)
+- [HydraDB container package](https://github.com/hydra-db/hydradb/pkgs/container/hydradb)
+- [Docker Desktop for Windows](https://docs.docker.com/desktop/setup/install/windows-install/)
+- [Groq API key page](https://console.groq.com/keys)
+
 Hydradb is the source of truth for the production CLI and API. The local verification mode is explicit with `--offline`; it is only for machines that do not have Hydradb available and is never used by the static demo to claim a live database query.
 
 ## Setup
@@ -39,7 +46,9 @@ The generator writes `packages/graph/fixtures/packages.jsonl`, the known exposed
 Start Hydradb using its official repository instructions, then set the Bolt endpoint. The default is not inferred because a missing database should fail loudly.
 
 ```bash
-export HYDRADB_URI=bolt://localhost:7687
+export HYDRADB_URI=bolt://127.0.0.1:7687
+export HYDRADB_USERNAME=neo4j
+export HYDRADB_AUTH_TOKEN=local-development-token-32-bytes
 pnpm aftershock build
 pnpm aftershock simulate left-pad
 pnpm aftershock scan packages/graph/fixtures/demo-lockfile.json
@@ -49,6 +58,30 @@ pnpm aftershock serve
 On PowerShell, use `$env:HYDRADB_URI = 'bolt://localhost:7687'` before the commands. The API listens on port `8787` unless `PORT` is set.
 
 The builder creates unique constraints for `package.name`, `version.id`, `maintainer.name`, and `service.name`, plus an index on `version.publishedAt`. Re-running the build uses merge keys and converges to the same graph.
+
+### Start a real local HydraDB node on Windows
+
+Install Docker Desktop, then run this in PowerShell from the repository root:
+
+```powershell
+New-Item -ItemType Directory -Force .\hydradb-data\store, .\hydradb-data\cache | Out-Null
+Set-Content -NoNewline .\hydradb-data\auth-token 'local-development-token-32-bytes'
+docker pull ghcr.io/hydra-db/hydradb:latest
+docker run --rm --user 10001:10001 -p 7687:7687 -p 8443:8443 -p 9090:9090 -v "${PWD}\hydradb-data:/data" -e CLOUD_PROVIDER=local -e LOCAL_PATH=/data/store -e GRAPH_NAMESPACE=default -e GRAPH_ID=default -e GRAPH_CELL_ID=cell-0 -e GRAPH_CELLS=cell-0 -e GRAPH_NODE_ID=node-0 -e GRAPH_BOLT_NODE_ADDRESSES=node-0=127.0.0.1:7687 -e GRAPH_ADVERTISED_BOLT_ADDR=127.0.0.1:7687 -e GRAPH_DATA_CACHE_DIR=/data/cache -e GRAPH_AUTH_TOKEN_FILE=/data/auth-token -e GRAPH_ALLOW_PLAINTEXT=true -e RUST_MIN_STACK=33554432 ghcr.io/hydra-db/hydradb:latest
+```
+
+Leave that terminal running. The URI is now exactly `bolt://127.0.0.1:7687`. In a second PowerShell terminal:
+
+```powershell
+$env:HYDRADB_URI = 'bolt://127.0.0.1:7687'
+$env:HYDRADB_USERNAME = 'neo4j'
+$env:HYDRADB_AUTH_TOKEN = 'local-development-token-32-bytes'
+corepack pnpm aftershock build
+corepack pnpm aftershock simulate left-pad
+corepack pnpm aftershock serve
+```
+
+HydraDB's own Bolt smoke uses the `neo4j` username and the auth token as its password. For a public deployment, replace the local URI with the TLS Bolt address assigned to the host, normally `neo4j+s://your-hydradb-host:7687`, and keep the token private.
 
 ## Run the complete local check
 
@@ -109,7 +142,9 @@ vercel --prod
 
 The Vercel deployment intentionally uses the generated fixture answer map. It does not connect the browser directly to Hydradb, so deploying the landing page does not switch the demo to live graph mode and does not need a `.env` file or Vercel environment variables.
 
-The live Hydradb mode is the Node CLI and Fastify API path documented above. To run that path, start the API on a host that can reach Hydradb and provide `HYDRADB_URI` there. The current Vercel project is a static landing deployment, not a serverless Hydradb API deployment.
+The page now supports both modes. Leave `VITE_AFTERSHOCK_API_URL` empty for the fixture-backed static demo. Set it to the public URL of the Fastify API before the Vercel build and the lockfile demo calls `/api/scan` and `/api/exposure` against the live graph, with the fixture as a fallback if the API is unavailable.
+
+For a public live API, run the Fastify process on a Docker-capable VM such as a [DigitalOcean Droplet](https://www.digitalocean.com/products/droplets), run HydraDB beside it, and expose the API through HTTPS. Set these API host variables: `HYDRADB_URI`, `HYDRADB_USERNAME`, `HYDRADB_AUTH_TOKEN`, and `PORT`. Then set `VITE_AFTERSHOCK_API_URL` in Vercel to the HTTPS API URL and redeploy. A Vercel static project cannot itself provide the persistent HydraDB process.
 
 ## Environment
 
@@ -117,9 +152,12 @@ No `.env` file is required for the static landing page. Copy `.env.example` only
 
 ```text
 HYDRADB_URI=bolt://localhost:7687
+HYDRADB_USERNAME=neo4j
+HYDRADB_AUTH_TOKEN=local-development-token-32-bytes
 AFTERSHOCK_FIXTURE=packages/graph/fixtures/packages.jsonl
 AFTERSHOCK_SPREAD_SCALE=10
 PORT=8787
+VITE_AFTERSHOCK_API_URL=
 GROQ_API_KEY=
 GROQ_MODEL_PRIMARY=openai/gpt-oss-120b
 GROQ_MODEL_FALLBACK=openai/gpt-oss-20b

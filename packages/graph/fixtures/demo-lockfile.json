@@ -1,0 +1,25 @@
+{
+  "name": "aftershock-demo",
+  "lockfileVersion": 3,
+  "requires": true,
+  "packages": {
+    "": {
+      "name": "aftershock-demo",
+      "version": "1.0.0",
+      "dependencies": {
+        "demo-service": "1.0.0"
+      }
+    },
+    "node_modules/demo-service": {
+      "version": "1.0.0",
+      "resolved": "fixture:demo-service",
+      "dependencies": {
+        "left-pad": "1.0.0"
+      }
+    },
+    "node_modules/left-pad": {
+      "version": "1.0.0",
+      "resolved": "fixture:left-pad"
+    }
+  }
+}

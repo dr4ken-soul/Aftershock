@@ -1,0 +1,10 @@
+{
+  "packageNodes": 1500,
+  "versionNodes": 3000,
+  "maintainerNodes": 32,
+  "serviceNodes": 1501,
+  "edges": 9087,
+  "closureMs": 361.47,
+  "scanMs": 204.53,
+  "generatedAt": "2026-08-21T02:39:07.461Z"
+}

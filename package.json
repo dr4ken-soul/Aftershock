@@ -1,0 +1,19 @@
+{
+  "name": "aftershock",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "packageManager": "pnpm@9.15.4",
+  "scripts": {
+    "generate": "tsx scripts/generate-fixtures.ts",
+    "build": "corepack pnpm generate && corepack pnpm --filter graph build && corepack pnpm generate && corepack pnpm --filter landing build",
+    "test": "corepack pnpm --filter graph test",
+    "aftershock": "tsx packages/graph/src/index.ts",
+    "smoke": "tsx scripts/smoke.ts",
+    "spec:self-check": "tsx scripts/spec-self-check.ts",
+    "demo": "corepack pnpm generate && corepack pnpm --filter graph build && corepack pnpm aftershock build --offline && corepack pnpm aftershock simulate left-pad --offline && corepack pnpm aftershock scan packages/graph/fixtures/demo-lockfile.json --offline"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2"
+  }
+}

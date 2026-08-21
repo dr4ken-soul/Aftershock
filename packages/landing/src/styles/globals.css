@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-primary: #0a0a0a;
+  --bg-secondary: #0f0f0f;
+  --bg-surface: #151515;
+  --bg-elevated: #1a1a1a;
+  --accent: #00f0ff;
+  --accent-hover: #33f5ff;
+  --accent-glow: rgba(0, 240, 255, 0.12);
+  --text-primary: #e0e0e0;
+  --text-secondary: #8a8a8a;
+  --text-muted: #4a4a4a;
+  --border-subtle: rgba(0, 240, 255, 0.06);
+  --border-default: rgba(0, 240, 255, 0.12);
+  --success: #00ff88;
+  --error: #ff3366;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg-primary); color: var(--text-primary); font-family: Inter, sans-serif; }
+button, a { font: inherit; }
+a { color: inherit; text-decoration: none; }
+.dot-grid { background-image: radial-gradient(rgba(0, 240, 255, 0.09) 0.7px, transparent 0.7px); background-size: 24px 24px; }
+.hero-veil { background: linear-gradient(to right, rgba(10, 10, 10, 0.92) 0%, rgba(10, 10, 10, 0.55) 45%, transparent 70%); }
+.grain { background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 128 128' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.28'/%3E%3C/svg%3E"); }
+.cell-hover { transition: transform 200ms ease, border-color 200ms ease, background-color 200ms ease; }
+.cell-hover:hover { transform: translateY(-2px); border-color: var(--accent); background-color: var(--bg-elevated); }
+::selection { background: var(--accent); color: var(--bg-primary); }
